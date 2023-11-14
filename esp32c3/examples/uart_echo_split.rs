@@ -27,6 +27,8 @@ use panic_rtt_target as _;
 // bring in panic handler
 use panic_rtt_target as _;
 
+const CMD_ARRAY_SIZE: usize = 64;
+
 #[rtic::app(device = esp32c3, dispatchers = [FROM_CPU_INTR0, FROM_CPU_INTR1])]
 mod app {
     use esp32c3_hal::{
@@ -44,18 +46,24 @@ mod app {
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprint, rprintln, rtt_init_print};
 
+    use crate::CMD_ARRAY_SIZE;
+
     const CAPACITY: usize = 100;
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        command: [u8; CMD_ARRAY_SIZE],
+    }
 
     #[local]
     struct Local {
+        cmdindex: usize,
         timer0: Timer<Timer0<TIMG0>>,
         tx: UartTx<'static, UART0>,
         rx: UartRx<'static, UART0>,
         sender: Sender<'static, u8, CAPACITY>,
     }
+
     #[init]
     fn init(_: init::Context) -> (Shared, Local) {
         rtt_init_print!();
@@ -93,6 +101,9 @@ mod app {
             &clocks,
             &mut system.peripheral_clock_control,
         );
+        
+        let command = [0u8;CMD_ARRAY_SIZE];
+        let cmdindex = 0usize;
 
         // This is stupid!
         // TODO, use at commands with break character
@@ -106,8 +117,11 @@ mod app {
         lowprio::spawn(receiver).unwrap();
 
         (
-            Shared {},
+            Shared {
+                command,
+            },
             Local {
+                cmdindex,
                 timer0,
                 tx,
                 rx,
@@ -126,22 +140,87 @@ mod app {
         }
     }
 
-    #[task(binds = UART0, priority=2, local = [ rx, sender])]
+    fn reset_cmd_array(command: &mut [u8;CMD_ARRAY_SIZE], cmdindex: &mut usize){
+        *command = [0u8;CMD_ARRAY_SIZE];
+        *cmdindex = 0;
+    }
+
+
+
+    fn run_command(command: &[u8;CMD_ARRAY_SIZE]){
+        rprintln!("Running command: ");
+        for character in command{
+            rprint!("{}", *character as char);
+        }
+    }
+
+
+    #[task(binds = UART0, priority=2, local = [ rx, sender, cmdindex], shared = [command])]
     fn uart0(cx: uart0::Context) {
         let rx = cx.local.rx;
         let sender = cx.local.sender;
+        let mut command = cx.shared.command;
+        let cmdindex = cx.local.cmdindex;
+
+        let mut cmd_word = [0u8;CMD_ARRAY_SIZE];
 
         rprintln!("Interrupt Received: ");
 
         while let nb::Result::Ok(c) = rx.read() {
             rprint!("{}", c as char);
+            rprintln!();    
+            
+                    
+            
+            command.lock(|command|{
+                if c == 13 {
+                    rprintln!("Enter pressed");                    
+                    //Extract command to minimize blocking
+                    cmd_word = *command;
+                    for character in *command{
+                        rprint!("{}", character as char);
+                    }
+                    reset_cmd_array(command, cmdindex);  
+                }
+                // Reset command array if completely filled
+                else{
+                    if c == 8 && *cmdindex > 0 {
+                        rprintln!("Removing character");
+                        command[*cmdindex] = 0;
+                        *cmdindex -= 1;
+                    }
+
+                    if *cmdindex >= CMD_ARRAY_SIZE {
+                        reset_cmd_array(command, cmdindex)
+                    }
+                    
+
+                    command[*cmdindex] = c;
+                    *cmdindex += 1;
+                    //Debugging array contents print
+                    for character in command{
+                        rprint!("{}", *character as char);
+                    }
+                }
+            });
+
+        
+            if cmd_word[0] != 0{
+                run_command(&cmd_word);
+                cmd_word = [0u8;CMD_ARRAY_SIZE];
+            }
+
+           
+
             match sender.try_send(c) {
                 Err(_) => {
                     rprintln!("send buffer full");
                 }
                 _ => {}
             }
+            
         }
+        
         rprintln!("");
         rx.reset_rx_fifo_full_interrupt()
     }
@@ -153,7 +232,17 @@ mod app {
 
         while let Ok(c) = receiver.recv().await {
             rprintln!("Receiver got: {}", c);
+            if c == 8{
+                tx.write(8).unwrap();
+                tx.write(32).unwrap();
+            }
             tx.write(c).unwrap();
+            if c == 13{
+                tx.write(10).unwrap();
+               // tx.write(62).unwrap();
+                //tx.write(32).unwrap();
+            }
+
         }
     }
 }
