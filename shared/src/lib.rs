@@ -33,6 +33,8 @@ pub enum Response {
     ParseError,
 }
 
+
+
 pub const CKSUM: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_CKSUM);
 
 /// Serialize T into cobs encoded out_buf with crc

@@ -23,21 +23,17 @@
 #![feature(type_alias_impl_trait)]
 
 use panic_rtt_target as _;
-use serde::{Serialize, Deserialize};
 
 // bring in panic handler
 use panic_rtt_target as _;
 
-use core::mem::size_of; 
-use corncobs::max_encoded_len; 
-const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
-const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 
 const CMD_ARRAY_SIZE: usize = 64;
 
 #[rtic::app(device = esp32c3, dispatchers = [FROM_CPU_INTR0, FROM_CPU_INTR1])]
 mod app {
     use esp32c3_hal::{
+        Rtc,
         clock::ClockControl,
         peripherals::{Peripherals, TIMG0, UART0},
         prelude::*,
@@ -50,7 +46,12 @@ mod app {
     };
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprint, rprintln, rtt_init_print};
-    use shared::serialize_crc_cobs;
+    use shared::{serialize_crc_cobs, deserialize_crc_cobs, in_buf, Message, Response};
+    use core::mem::size_of; 
+    use corncobs::max_encoded_len; 
+    const IN_SIZE: usize = max_encoded_len(size_of::<in_buf>() + size_of::<u32>()); 
+    const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
+    use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
     use crate::CMD_ARRAY_SIZE;
 
@@ -58,7 +59,8 @@ mod app {
 
     #[shared]
     struct Shared {
-        command: [u8; CMD_ARRAY_SIZE],
+        in_buf: [u8; CMD_ARRAY_SIZE],
+        rtc: Rtc<'static>
     }
 
     #[local]
@@ -87,6 +89,8 @@ mod app {
         );
         let mut timer0 = timer_group0.timer0;
 
+        let rtc: Rtc<'_> = Rtc::new(peripherals.RTC_CNTL);
+
         let config = Config {
             baudrate: 115200,
             data_bits: DataBits::DataBits8,
@@ -108,7 +112,7 @@ mod app {
             &mut system.peripheral_clock_control,
         );
         
-        let command = [0u8;CMD_ARRAY_SIZE];
+        let in_buf = [0u8;CMD_ARRAY_SIZE];
         let cmdindex = 0usize;
 
         // This is stupid!
@@ -124,7 +128,8 @@ mod app {
 
         (
             Shared {
-                command,
+                in_buf,
+                rtc
             },
             Local {
                 cmdindex,
@@ -146,30 +151,33 @@ mod app {
         }
     }
 
-    fn reset_cmd_array(command: &mut [u8;CMD_ARRAY_SIZE], cmdindex: &mut usize){
-        *command = [0u8;CMD_ARRAY_SIZE];
+    fn reset_cmd_array(in_buf: &mut [u8;CMD_ARRAY_SIZE], cmdindex: &mut usize){
+        *in_buf = [0u8;CMD_ARRAY_SIZE];
         *cmdindex = 0;
     }
 
 
 
-    fn run_command(command: &[u8;CMD_ARRAY_SIZE]){
-        
-        serialize_crc_cobs(command);
-        for character in command{
+    fn run_command(in_buf: &[u8;CMD_ARRAY_SIZE]){
+        /*match in_buf{
+            [115, 101, 116, 116, 105, 109, 101] => (),
+
+        };
+        serialize_crc_cobs(in_buf);
+        */for character in in_buf{
             rprint!("{}", *character as char);
         }
     }
 
 
-    #[task(binds = UART0, priority=2, local = [ rx, sender, cmdindex], shared = [command])]
+    #[task(binds = UART0, priority=2, local = [ rx, sender, cmdindex], shared = [in_buf])]
     fn uart0(cx: uart0::Context) {
         let rx = cx.local.rx;
         let sender = cx.local.sender;
-        let mut command = cx.shared.command;
+        let mut in_buf = cx.shared.in_buf;
         let cmdindex = cx.local.cmdindex;
-
-        let mut cmd_word = [0u8;CMD_ARRAY_SIZE];
+        let mut cmd_word_array = [0u8;CMD_ARRAY_SIZE];
+        let cmd_word: [u8;8] = [0u8;8];
 
         rprintln!("Interrupt Received: ");
 
@@ -178,49 +186,52 @@ mod app {
             rprintln!();    
             
                     
-            
-            command.lock(|command|{
-                if c == 13 {
-                    rprintln!("Enter pressed");                    
-                    // Extract command to minimize blocking
-                    cmd_word = *command;
-                    for character in *command{
+            // Fill buffer with inputted data
+            in_buf.lock(|in_buf|{
+                if c == 0 {
+                    rprintln!("COBS packet recieved");                    
+                    cmd_word = deserialize_crc_cobs(in_buf).unwrap();
+
+
+
+                    for character in *in_buf{
                         rprint!("{}", character as char);
                     }
-                    reset_cmd_array(command, cmdindex);  
+                    reset_cmd_array(in_buf, cmdindex);  
                 }
 
-                // Reset command array if completely filled
+                // Reset in_buf array if completely filled
                 else{
                     if c == 8 && *cmdindex > 0 {
                         rprintln!("Removing character");
-                        command[*cmdindex-1] = 0;
+                        in_buf[*cmdindex-1] = 0;
                         *cmdindex -= 1;
                     }
 
                     if *cmdindex >= CMD_ARRAY_SIZE {
-                        reset_cmd_array(command, cmdindex)
+                        reset_cmd_array(in_buf, cmdindex)
                     }
                     
                     if c != 8{
-                        command[*cmdindex] = c;
+                        in_buf[*cmdindex] = c;
                     }
                                         
                     //Debugging array contents print
-                    for character in command{
+                    for character in in_buf{
                         rprint!("{}", *character as char);
                     }
                 }
 
-                //Increment command index if not backspace or enter
+                //Increment in_buf index if not backspace or enter
                 if c != 8 && c != 13 {*cmdindex += 1};
 
             });
 
-        
-            if cmd_word[0] != 0{
-                run_command(&cmd_word);
-                cmd_word = [0u8;CMD_ARRAY_SIZE];
+
+            if cmd_word_array[0] != 0{
+                let cmd_wrd = 
+                rprint!("{}", cmd_wrd);
+                cmd_word_array = [0u8;CMD_ARRAY_SIZE];
             }
 
             match sender.try_send(c) {
