@@ -23,9 +23,15 @@
 #![feature(type_alias_impl_trait)]
 
 use panic_rtt_target as _;
+use serde::{Serialize, Deserialize};
 
 // bring in panic handler
 use panic_rtt_target as _;
+
+use core::mem::size_of; 
+use corncobs::max_encoded_len; 
+const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
+const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 
 const CMD_ARRAY_SIZE: usize = 64;
 
@@ -42,9 +48,9 @@ mod app {
         },
         Uart, IO,
     };
-
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprint, rprintln, rtt_init_print};
+    use shared::serialize_crc_cobs;
 
     use crate::CMD_ARRAY_SIZE;
 
@@ -148,7 +154,8 @@ mod app {
 
 
     fn run_command(command: &[u8;CMD_ARRAY_SIZE]){
-        rprintln!("Running command: ");
+        
+        serialize_crc_cobs(command);
         for character in command{
             rprint!("{}", *character as char);
         }
