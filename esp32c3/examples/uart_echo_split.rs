@@ -28,7 +28,8 @@ use panic_rtt_target as _;
 use panic_rtt_target as _;
 
 
-const CMD_ARRAY_SIZE: usize = 64;
+const BUF_ARRAY_SIZE: usize = 64;
+const CMD_ARRAY_SIZE: usize = 8;
 
 #[rtic::app(device = esp32c3, dispatchers = [FROM_CPU_INTR0, FROM_CPU_INTR1])]
 mod app {
@@ -46,26 +47,29 @@ mod app {
     };
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprint, rprintln, rtt_init_print};
-    use shared::{serialize_crc_cobs, deserialize_crc_cobs, Command, Message, Response};
+    use shared::{serialize_crc_cobs, deserialize_crc_cobs, UtcDateTime, Id, Command, Message, Response};
     use core::mem::size_of; 
     use corncobs::max_encoded_len; 
     const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
     const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
-    use serde::{Serialize, Deserialize, de::DeserializeOwned};
-
     use crate::CMD_ARRAY_SIZE;
+    use crate::BUF_ARRAY_SIZE;
+
+    
 
     const CAPACITY: usize = 100;
 
     #[shared]
     struct Shared {
-        in_buf: [u8; CMD_ARRAY_SIZE],
-        rtc: Rtc<'static>
+        in_buf: [u8; BUF_ARRAY_SIZE],
     }
 
     #[local]
     struct Local {
         in_buf_index: usize,
+        rtc: Rtc<'static>,
+        rtc_offset: u64,
+        epoch: UtcDateTime,
         timer0: Timer<Timer0<TIMG0>>,
         tx: UartTx<'static, UART0>,
         rx: UartRx<'static, UART0>,
@@ -90,6 +94,7 @@ mod app {
         let mut timer0 = timer_group0.timer0;
 
         let rtc: Rtc<'_> = Rtc::new(peripherals.RTC_CNTL);
+        let rtc_offset = 0;
 
         let config = Config {
             baudrate: 115200,
@@ -112,7 +117,7 @@ mod app {
             &mut system.peripheral_clock_control,
         );
         
-        let in_buf = [0u8;CMD_ARRAY_SIZE];
+        let in_buf = [0u8;BUF_ARRAY_SIZE];
         let in_buf_index = 0usize;
 
         // This is stupid!
@@ -129,10 +134,12 @@ mod app {
         (
             Shared {
                 in_buf,
-                rtc
             },
             Local {
                 in_buf_index,
+                rtc,
+                epoch
+                rtc_offset,
                 timer0,
                 tx,
                 rx,
@@ -151,24 +158,42 @@ mod app {
         }
     }
 
+    
+
     fn reset_cmd_array(in_buf: &mut [u8;CMD_ARRAY_SIZE], in_buf_index: &mut usize){
         *in_buf = [0u8;CMD_ARRAY_SIZE];
         *in_buf_index = 0;
     }
 
-
-
-    fn run_command(in_buf: &[u8;CMD_ARRAY_SIZE]) -> Result<&str,&str>{
-        /*match in_buf{
-            [115, 101, 116, 116, 105, 109, 101] => (),
-
-        };
-        serialize_crc_cobs(in_buf);
-        */for character in in_buf{
-            rprint!("{}", *character as char);
-            
+    fn set_rtc(rtc: Rtc<'static>, epoch: UtcDateTime, id:Id, message:Message) -> Response{
+        let mut data = 0u32;
+        match message{
+            Message::B(content) => data = content,
+            _ => return Response::ParseError
         }
-        Ok("Success")
+
+        match id{
+            1 => epoch.year = data,
+            2 => epoch.month = data,
+            3 => epoch.day = data,
+            4 => epoch.hour = data,
+            5 => epoch.minute = data,
+            6 => epoch.second = data,
+            _ => return Response::ParseError
+        }
+
+    }
+
+
+    fn run_command(cmd_word: Command, rtc: Rtc<'static>, epoch: UtcDateTime) -> Response {
+       
+       match cmd_word {
+        Command::Set(id, data, DevId) => set_rtc(rtc, epoch, id, data),
+        Command::Get(Id, Parameter, DevId) => (),
+           
+       }
+       Response::SetOk
+       
     }
 
 
@@ -178,8 +203,7 @@ mod app {
         let sender = cx.local.sender;
         let mut in_buf = cx.shared.in_buf;
         let in_buf_index = cx.local.in_buf_index;
-        let mut cmd_word_array = [0u8;CMD_ARRAY_SIZE];
-        let cmd_word: [u8;8] = [0u8;8];
+        let cmd_word: Command = Command::Set(0,Message::A,0);
 
         rprintln!("Interrupt Received: ");
 
@@ -194,11 +218,6 @@ mod app {
                     rprintln!("COBS packet recieved");                    
                     cmd_word = deserialize_crc_cobs(in_buf).unwrap();
 
-
-
-                    for character in cmd_word{
-                        rprint!("{}", character as char);
-                    }
                     reset_cmd_array(in_buf, in_buf_index);  
                 }
 
@@ -221,10 +240,13 @@ mod app {
             });
 
 
-            if cmd_word_array[0] != 0{
-                let cmd_wrd = 
-                rprint!("{}", cmd_wrd);
-                cmd_word_array = [0u8;CMD_ARRAY_SIZE];
+            if cmd_word[0] != 0{
+                // Debug print received command
+                for character in cmd_word{
+                    rprint!("{}", character as char);
+                }
+
+                cmd_word = [0u8;CMD_ARRAY_SIZE];
             }
 
             match sender.try_send(c) {
