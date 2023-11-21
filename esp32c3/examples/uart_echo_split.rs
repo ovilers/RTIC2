@@ -175,18 +175,19 @@ mod app {
             command.lock(|command|{
                 if c == 13 {
                     rprintln!("Enter pressed");                    
-                    //Extract command to minimize blocking
+                    // Extract command to minimize blocking
                     cmd_word = *command;
                     for character in *command{
                         rprint!("{}", character as char);
                     }
                     reset_cmd_array(command, cmdindex);  
                 }
+
                 // Reset command array if completely filled
                 else{
                     if c == 8 && *cmdindex > 0 {
                         rprintln!("Removing character");
-                        command[*cmdindex] = 0;
+                        command[*cmdindex-1] = 0;
                         *cmdindex -= 1;
                     }
 
@@ -194,14 +195,19 @@ mod app {
                         reset_cmd_array(command, cmdindex)
                     }
                     
-
-                    command[*cmdindex] = c;
-                    *cmdindex += 1;
+                    if c != 8{
+                        command[*cmdindex] = c;
+                    }
+                                        
                     //Debugging array contents print
                     for character in command{
                         rprint!("{}", *character as char);
                     }
                 }
+
+                //Increment command index if not backspace or enter
+                if c != 8 && c != 13 {*cmdindex += 1};
+
             });
 
         
@@ -209,8 +215,6 @@ mod app {
                 run_command(&cmd_word);
                 cmd_word = [0u8;CMD_ARRAY_SIZE];
             }
-
-           
 
             match sender.try_send(c) {
                 Err(_) => {
