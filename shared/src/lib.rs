@@ -60,24 +60,31 @@ pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
     Ok(&out_buf[0..n])
 }
 
+pub enum DeserError{
+    CrcError,
+    ParseError(ssmarshal::Error)
+}
+
 /// deserialize T from cobs in_buf with crc check
-/// panics on all errors
-/// TODO: reasonable error handling
-pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, ssmarshal::Error>
+/// On error returns CrcError on unmatching CRC, otherwise ParseError
+/// 
+pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, DeserError>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
     let n = corncobs::decode_in_place(in_buf).unwrap();
     let (t, resp_used) = match ssmarshal::deserialize::<T>(&in_buf[0..n]){
         Ok(value) => value,
-        Err(m) => return Err(m)
+        Err(m) => return Err(DeserError::ParseError(m))
     };
     let crc_buf = &in_buf[resp_used..];
     let (crc, _crc_used) = match ssmarshal::deserialize::<u32>(crc_buf){
         Ok(value) => value,
-        Err(m) => return Err(m)
+        Err(_) => return Err(DeserError::ParseError(m))
     };
     let pkg_crc = CKSUM.checksum(&in_buf[0..resp_used]);
-    assert_eq! {crc, pkg_crc};
+    if crc != pkg_crc{
+        return Err(DeserError::CrcError)
+    };
     Ok(t)
 }
