@@ -3,8 +3,6 @@
 pub mod date_time;
 pub mod shift_register;
 
-use core::result;
-
 use serde_derive::{Deserialize, Serialize};
 
 // we could use new-type pattern here but let's keep it simple
