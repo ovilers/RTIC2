@@ -3,6 +3,8 @@
 pub mod date_time;
 pub mod shift_register;
 
+use core::result;
+
 use serde_derive::{Deserialize, Serialize};
 
 // we could use new-type pattern here but let's keep it simple
@@ -43,13 +45,21 @@ pub const CKSUM: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_CKSUM);
 pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
     t: &T,
     out_buf: &'a mut [u8; N],
-) -> &'a [u8] {
-    let n_ser = ssmarshal::serialize(out_buf, t).unwrap();
+) -> Result<&'a [u8], ssmarshal::Error> {
+
+    let n_ser = match ssmarshal::serialize(out_buf, t){
+        Ok(value) => value,
+        Err(m) => return Err(m)
+    };
+
     let crc = CKSUM.checksum(&out_buf[0..n_ser]);
-    let n_crc = ssmarshal::serialize(&mut out_buf[n_ser..], &crc).unwrap();
-    let buf_copy = *out_buf; // implies memcpy, could we do better?
+    let n_crc = match ssmarshal::serialize(&mut out_buf[n_ser..], &crc){
+        Ok(value) => value,
+        Err(m) => return Err(m)
+    };
+    let buf_copy = (*out_buf).clone(); // implies memcpy, could we do better?
     let n = corncobs::encode_buf(&buf_copy[0..n_ser + n_crc], out_buf);
-    &out_buf[0..n]
+    Ok(&out_buf[0..n])
 }
 
 /// deserialize T from cobs in_buf with crc check
