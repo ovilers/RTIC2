@@ -57,7 +57,7 @@ pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
         Ok(value) => value,
         Err(m) => return Err(m)
     };
-    let buf_copy = (*out_buf).clone(); // implies memcpy, could we do better?
+    let buf_copy = (*out_buf).clone();
     let n = corncobs::encode_buf(&buf_copy[0..n_ser + n_crc], out_buf);
     Ok(&out_buf[0..n])
 }
@@ -65,14 +65,20 @@ pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
 /// deserialize T from cobs in_buf with crc check
 /// panics on all errors
 /// TODO: reasonable error handling
-pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, ()>
+pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, ssmarshal::Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
     let n = corncobs::decode_in_place(in_buf).unwrap();
-    let (t, resp_used) = ssmarshal::deserialize::<T>(&in_buf[0..n]).unwrap();
+    let (t, resp_used) = match ssmarshal::deserialize::<T>(&in_buf[0..n]){
+        Ok(value) => value,
+        Err(m) => return Err(m)
+    };
     let crc_buf = &in_buf[resp_used..];
-    let (crc, _crc_used) = ssmarshal::deserialize::<u32>(crc_buf).unwrap();
+    let (crc, _crc_used) = match ssmarshal::deserialize::<u32>(crc_buf){
+        Ok(value) => value,
+        Err(m) => return Err(m)
+    };
     let pkg_crc = CKSUM.checksum(&in_buf[0..resp_used]);
     assert_eq! {crc, pkg_crc};
     Ok(t)
