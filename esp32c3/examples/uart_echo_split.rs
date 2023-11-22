@@ -213,6 +213,7 @@ mod app {
             // Fill buffer with received data
         
             if c == 0x00 {
+                // TODO: Re-request packet on CrcError, send error message on ParseError
                 rprintln!("COBS packet recieved");                    
                 cmd_word = deserialize_crc_cobs(in_buf).unwrap();
 
@@ -230,7 +231,13 @@ mod app {
                                 }
                     };
                     for i in errmsg{
-                        sender.try_send(*i);
+                        // TODO: Handle send buffer full without recursive retries or panics
+                        match sender.try_send(*i){
+                            Err(_) => {
+                                rprintln!("send buffer full");
+                            }
+                            _ => {}
+                        };
                     }                 
                 }
                     
