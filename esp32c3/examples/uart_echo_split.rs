@@ -61,11 +61,11 @@ mod app {
 
     #[shared]
     struct Shared {
-        in_buf: [u8; BUF_ARRAY_SIZE],
     }
 
     #[local]
     struct Local {
+        in_buf: [u8; BUF_ARRAY_SIZE],
         in_buf_index: usize,
         rtc: Rtc<'static>,
         rtc_offset: u64,
@@ -133,12 +133,12 @@ mod app {
 
         (
             Shared {
-                in_buf,
             },
             Local {
                 in_buf_index,
                 rtc,
-                epoch
+                in_buf,
+                epoch,
                 rtc_offset,
                 timer0,
                 tx,
@@ -160,9 +160,9 @@ mod app {
 
     
 
-    fn reset_cmd_array(in_buf: &mut [u8;CMD_ARRAY_SIZE], in_buf_index: &mut usize){
-        *in_buf = [0u8;CMD_ARRAY_SIZE];
-        *in_buf_index = 0;
+    fn reset_indexed_buf<const N: usize>(buf: &mut [u8;N], buf_index: &mut usize){
+        *buf = [0u8;N];
+        *buf_index = 0;
     }
 
     fn set_rtc(rtc: Rtc<'static>, epoch: UtcDateTime, id:Id, message:Message) -> Response{
@@ -197,57 +197,50 @@ mod app {
     }
 
 
-    #[task(binds = UART0, priority=2, local = [ rx, sender, in_buf_index], shared = [in_buf])]
+    #[task(binds = UART0, priority=2, local = [ rx, sender, in_buf_index, in_buf], shared = [])]
     fn uart0(cx: uart0::Context) {
         let rx = cx.local.rx;
         let sender = cx.local.sender;
-        let mut in_buf = cx.shared.in_buf;
+        let mut in_buf = cx.local.in_buf;
         let in_buf_index = cx.local.in_buf_index;
-        let cmd_word: Command = Command::Set(0,Message::A,0);
+        
+        let mut cmd_word: Command = Command::Set(0,Message::A,0);
+        let mut out_buf = [0u8;BUF_ARRAY_SIZE];
 
         rprintln!("Interrupt Received: ");
 
-        while let nb::Result::Ok(c) = rx.read() {
-            rprint!("{}", c as char);
-            rprintln!();    
-            
-                    
-            // Fill buffer with inputted data
-            in_buf.lock(|in_buf|{
-                if c == 0x00 {
-                    rprintln!("COBS packet recieved");                    
-                    cmd_word = deserialize_crc_cobs(in_buf).unwrap();
+        while let nb::Result::Ok(c) = rx.read() {  
+            // Fill buffer with received data
+        
+            if c == 0x00 {
+                rprintln!("COBS packet recieved");                    
+                cmd_word = deserialize_crc_cobs(in_buf).unwrap();
 
-                    reset_cmd_array(in_buf, in_buf_index);  
-                }
-
+                reset_indexed_buf(in_buf, in_buf_index);  
+            }
+            else{
                 // Reset in_buf array if completely filled
-                
-                if *in_buf_index >= CMD_ARRAY_SIZE {
-                    reset_cmd_array(in_buf, in_buf_index)
+                if *in_buf_index >= BUF_ARRAY_SIZE {
+                    reset_indexed_buf(in_buf, in_buf_index);
+                    let errmsg: &[u8]; 
+                    match serialize_crc_cobs(&Response::ParseError, &mut out_buf){
+                        Ok(value) => errmsg = value,
+                        Err(m) => {rprintln!("in_buf_array full, Failed to serialize error message:{}", m);
+                                   break; 
+                                }
+                    };
+                    for i in errmsg{
+                        sender.try_send(*i);
+                    }                 
                 }
                     
                 in_buf[*in_buf_index] = c;
-                                        
-                //Debugging array contents print
-                for character in in_buf{
-                    rprint!("{}", *character as char);
-                }
-                
-
                 *in_buf_index += 1;
-
-            });
-
-
-            if cmd_word[0] != 0{
-                // Debug print received command
-                for character in cmd_word{
-                    rprint!("{}", character as char);
-                }
-
-                cmd_word = [0u8;CMD_ARRAY_SIZE];
             }
+            
+
+
+            
 
             match sender.try_send(c) {
                 Err(_) => {
