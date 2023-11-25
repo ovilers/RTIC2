@@ -62,7 +62,7 @@ pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
 
 pub enum DeserError{
     CrcError,
-    ParseError(ssmarshal::Error)
+    ParseError
 }
 
 /// deserialize T from cobs in_buf with crc check
@@ -72,15 +72,18 @@ pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, DeserError>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    let n = corncobs::decode_in_place(in_buf).unwrap();
+    let n = match corncobs::decode_in_place(in_buf){
+        Ok(value) => value,
+        Err(m) => return Err(DeserError::ParseError)
+    };
     let (t, resp_used) = match ssmarshal::deserialize::<T>(&in_buf[0..n]){
         Ok(value) => value,
-        Err(m) => return Err(DeserError::ParseError(m))
+        Err(m) => return Err(DeserError::ParseError)
     };
     let crc_buf = &in_buf[resp_used..];
     let (crc, _crc_used) = match ssmarshal::deserialize::<u32>(crc_buf){
         Ok(value) => value,
-        Err(_) => return Err(DeserError::ParseError(m))
+        Err(m) => return Err(DeserError::ParseError)
     };
     let pkg_crc = CKSUM.checksum(&in_buf[0..resp_used]);
     if crc != pkg_crc{
