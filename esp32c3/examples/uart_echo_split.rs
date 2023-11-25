@@ -240,7 +240,7 @@ mod app {
                 // Reset in_buf array if completely filled
                 if *in_buf_index >= IN_SIZE {
                     reset_indexed_buf(in_buf, in_buf_index);
-                    respond(tx, &mut out_buf, Response::ParseError);
+                    respond(tx, &mut out_buf, Response::NotOk);
                     }  
 
                 in_buf[*in_buf_index] = c;
