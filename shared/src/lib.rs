@@ -4,6 +4,7 @@ pub mod date_time;
 pub mod shift_register;
 
 use serde_derive::{Deserialize, Serialize};
+use ssmarshal::Error;
 
 // we could use new-type pattern here but let's keep it simple
 pub type Id = u32;
@@ -60,34 +61,30 @@ pub fn serialize_crc_cobs<'a, T: serde::Serialize, const N: usize>(
     Ok(&out_buf[0..n])
 }
 
-pub enum DeserError{
-    CrcError,
-    ParseError
-}
 
 /// deserialize T from cobs in_buf with crc check
 /// On error returns CrcError on unmatching CRC, otherwise ParseError
 /// 
-pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, DeserError>
+pub fn deserialize_crc_cobs<T>(in_buf: &mut [u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
     let n = match corncobs::decode_in_place(in_buf){
         Ok(value) => value,
-        Err(m) => return Err(DeserError::ParseError)
+        Err(m) => return Err(ssmarshal::Error::InvalidRepresentation)
     };
     let (t, resp_used) = match ssmarshal::deserialize::<T>(&in_buf[0..n]){
         Ok(value) => value,
-        Err(m) => return Err(DeserError::ParseError)
+        Err(m) => return Err(m)
     };
     let crc_buf = &in_buf[resp_used..];
     let (crc, _crc_used) = match ssmarshal::deserialize::<u32>(crc_buf){
         Ok(value) => value,
-        Err(m) => return Err(DeserError::ParseError)
+        Err(m) => return Err(m)
     };
     let pkg_crc = CKSUM.checksum(&in_buf[0..resp_used]);
     if crc != pkg_crc{
-        return Err(DeserError::CrcError)
+        return Err(ssmarshal::Error::InvalidRepresentation)
     };
     Ok(t)
 }
