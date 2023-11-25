@@ -80,7 +80,7 @@ where
 {
     let n = match corncobs::decode_in_place(in_buf){
         Ok(value) => value,
-        Err(m) => return Err(ssmarshal::Error::InvalidRepresentation)
+        Err(_) => return Err(ssmarshal::Error::InvalidRepresentation)
     };
     let (t, resp_used) = match ssmarshal::deserialize::<T>(&in_buf[0..n]){
         Ok(value) => value,
@@ -93,7 +93,7 @@ where
     };
     let pkg_crc = CKSUM.checksum(&in_buf[0..resp_used]);
     if crc != pkg_crc{
-        return Err(ssmarshal::Error::InvalidRepresentation)
+        return Err(ssmarshal::Error::ApplicationError("Crc Mismatch"))
     };
     Ok(t)
 }
