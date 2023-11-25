@@ -18,7 +18,7 @@ use serial2::SerialPort;
 
 // Application dependencies
 use host::open;
-use shared::{deserialize_crc_cobs, serialize_crc_cobs, Command, Message, Response, DeserError}; // local library
+use shared::{deserialize_crc_cobs, serialize_crc_cobs, Command, Message, Response}; // local library
 
 const IN_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 const OUT_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>());
@@ -53,7 +53,7 @@ fn request(
     println!("out_buf {}", out_buf.len());
     let to_write = serialize_crc_cobs(cmd, out_buf);
     match to_write{
-        Ok(val) => port.write_all(val)?,
+        Ok(val) => port.write_all(val).unwrap_or(println!("Failed to send packet")),
         Err(m) => println!("Serialization error: {:?}", m)
     }
 
@@ -72,7 +72,7 @@ fn request(
     println!("cobs index {}", index);
     match deserialize_crc_cobs(in_buf){
         Ok(val) => Ok(val),
-        Err(DeserError::CrcError) => Err(Error::new(ErrorKind::InvalidData, "Crc mismatch!")),
-        Err(DeserError::ParseError) => Err(Error::new(ErrorKind::InvalidData, "Could not parse data!")),
+        Err(ssmarshal::Error::ApplicationError("Crc Mismatch")) => Err(Error::new(ErrorKind::InvalidData, "Crc mismatch!")),
+        _ => Err(Error::new(ErrorKind::InvalidData, "Could not parse data!")),
     }
 }
