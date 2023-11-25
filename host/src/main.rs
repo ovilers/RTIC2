@@ -10,7 +10,7 @@
 //!
 
 // Rust dependencies
-use std::{io::Read, mem::size_of};
+use std::{io::{Read, ErrorKind, Error}, mem::size_of};
 
 // Libraries
 use corncobs::{max_encoded_len, ZERO};
@@ -18,7 +18,7 @@ use serial2::SerialPort;
 
 // Application dependencies
 use host::open;
-use shared::{deserialize_crc_cobs, serialize_crc_cobs, Command, Message, Response}; // local library
+use shared::{deserialize_crc_cobs, serialize_crc_cobs, Command, Message, Response, DeserError}; // local library
 
 const IN_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 const OUT_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>());
@@ -52,7 +52,10 @@ fn request(
 ) -> Result<Response, std::io::Error> {
     println!("out_buf {}", out_buf.len());
     let to_write = serialize_crc_cobs(cmd, out_buf);
-    port.write_all(to_write)?;
+    match to_write{
+        Ok(val) => port.write_all(val)?,
+        Err(m) => println!("Serialization error: {:?}", m)
+    }
 
     let mut index: usize = 0;
     loop {
@@ -67,5 +70,9 @@ fn request(
         }
     }
     println!("cobs index {}", index);
-    Ok(deserialize_crc_cobs(in_buf).unwrap())
+    match deserialize_crc_cobs(in_buf){
+        Ok(val) => Ok(val),
+        Err(DeserError::CrcError) => Err(Error::new(ErrorKind::InvalidData, "Crc mismatch!")),
+        Err(DeserError::ParseError) => Err(Error::new(ErrorKind::InvalidData, "Could not parse data!")),
+    }
 }
