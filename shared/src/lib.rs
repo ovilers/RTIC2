@@ -5,11 +5,18 @@ pub mod shift_register;
 
 use serde_derive::{Deserialize, Serialize};
 use ssmarshal::Error;
+use core::mem::size_of; 
+use corncobs::{max_encoded_len, 
+//    ZERO
+}; 
 
 // we could use new-type pattern here but let's keep it simple
 pub type Id = u32;
 pub type DevId = u32;
 pub type Parameter = u32;
+
+pub const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
+pub const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
@@ -32,6 +39,8 @@ pub enum Response {
     Data(Id, Parameter, u32, DevId),
     SetOk,
     ParseError,
+    NotOk,
+    Recovered
 }
 
 
