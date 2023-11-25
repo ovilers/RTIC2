@@ -26,15 +26,15 @@ use panic_rtt_target as _;
 
 // bring in panic handler
 use panic_rtt_target as _;
+// use corncobs::max_encoded_len;
+// use core::mem::size_of;
 
 
-const BUF_ARRAY_SIZE: usize = 64;
-const CMD_ARRAY_SIZE: usize = 8;
 
 #[rtic::app(device = esp32c3, dispatchers = [FROM_CPU_INTR0, FROM_CPU_INTR1])]
 mod app {
     use esp32c3_hal::{
-        Rtc,
+ //       Rtc,
         clock::ClockControl,
         peripherals::{Peripherals, TIMG0, UART0},
         prelude::*,
@@ -43,17 +43,27 @@ mod app {
             config::{Config, DataBits, Parity, StopBits},
             TxRxPins, UartRx, UartTx,
         },
-        Uart, IO,
+        Uart, IO, 
+        // riscv::register::medeleg::Medeleg,
     };
     use rtic_sync::{channel::*, make_channel};
-    use rtt_target::{rprint, rprintln, rtt_init_print};
-    use shared::{serialize_crc_cobs, deserialize_crc_cobs, UtcDateTime, Id, Command, Message, Response};
+    use rtt_target::{
+        //rprint, 
+        rprintln, rtt_init_print};
+    use shared::{
+     //   serialize_crc_cobs, 
+        deserialize_crc_cobs, 
+   //     UtcDateTime, 
+     //   Id, 
+        Command, Message, Response, DeserError};
     use core::mem::size_of; 
-    use corncobs::max_encoded_len; 
-    const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
-    const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
-    use crate::CMD_ARRAY_SIZE;
-    use crate::BUF_ARRAY_SIZE;
+    use corncobs::{max_encoded_len, 
+    //    ZERO
+    }; 
+   // const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
+    //const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
+    const BUF_ARRAY_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
+   // const CMD_ARRAY_SIZE: usize = 8;
 
     
 
@@ -67,9 +77,9 @@ mod app {
     struct Local {
         in_buf: [u8; BUF_ARRAY_SIZE],
         in_buf_index: usize,
-        rtc: Rtc<'static>,
-        rtc_offset: u64,
-        epoch: UtcDateTime,
+    //    rtc: Rtc<'static>,
+    //    rtc_offset: u64,
+      //  epoch: UtcDateTime,
         timer0: Timer<Timer0<TIMG0>>,
         tx: UartTx<'static, UART0>,
         rx: UartRx<'static, UART0>,
@@ -93,8 +103,8 @@ mod app {
         );
         let mut timer0 = timer_group0.timer0;
 
-        let rtc: Rtc<'_> = Rtc::new(peripherals.RTC_CNTL);
-        let rtc_offset = 0;
+  //      let rtc: Rtc<'_> = Rtc::new(peripherals.RTC_CNTL);
+   //     let rtc_offset = 0;
 
         let config = Config {
             baudrate: 115200,
@@ -136,10 +146,10 @@ mod app {
             },
             Local {
                 in_buf_index,
-                rtc,
+     //           rtc,
                 in_buf,
-                epoch,
-                rtc_offset,
+       //         epoch,
+     //           rtc_offset,
                 timer0,
                 tx,
                 rx,
@@ -164,15 +174,15 @@ mod app {
         *buf = [0u8;N];
         *buf_index = 0;
     }
-
-    fn set_rtc(rtc: Rtc<'static>, epoch: UtcDateTime, id:Id, message:Message) -> Response{
+/*
+    fn set_rtc(rtc: Rtc<'static>, epoch: u8, id:Id, message:Message) -> Response{
         let mut data = 0u32;
         match message{
-            Message::B(content) => data = content,
+          //  Message::B(content) => data = content,
             _ => return Response::ParseError
         }
 
-        match id{
+       /* match id{
             1 => epoch.year = data,
             2 => epoch.month = data,
             3 => epoch.day = data,
@@ -181,86 +191,84 @@ mod app {
             6 => epoch.second = data,
             _ => return Response::ParseError
         }
-
+        */
     }
+*/
 
-
-    fn run_command(cmd_word: Command, rtc: Rtc<'static>, epoch: UtcDateTime) -> Response {
+    fn run_command(cmd_word: Command){
        
        match cmd_word {
-        Command::Set(id, data, DevId) => set_rtc(rtc, epoch, id, data),
-        Command::Get(Id, Parameter, DevId) => (),
+       _ => {}
            
        }
-       Response::SetOk
+     //  Response::SetOk;
        
     }
 
+    // TODO: Implement requesting resend of packet
+    fn request_resend(){
+
+    }
+
+
+
+    // TODO: Implement sending errmsg to host
+    fn send_errmsg(response: Response, sender: &mut Sender<'_, u8, 100> ){
+        match response{
+            Response::ParseError => {sender.try_send('E' as u8).unwrap();}
+            ,
+            _ => {}
+        }
+    }
 
     #[task(binds = UART0, priority=2, local = [ rx, sender, in_buf_index, in_buf], shared = [])]
     fn uart0(cx: uart0::Context) {
         let rx = cx.local.rx;
         let sender = cx.local.sender;
-        let mut in_buf = cx.local.in_buf;
+        let in_buf = cx.local.in_buf;
         let in_buf_index = cx.local.in_buf_index;
         
-        let mut cmd_word: Command = Command::Set(0,Message::A,0);
-        let mut out_buf = [0u8;BUF_ARRAY_SIZE];
+        let _cmd_word: Command = Command::Set(0,Message::A,0);
+        let _out_buf = [0u8;BUF_ARRAY_SIZE];
 
         rprintln!("Interrupt Received: ");
 
         while let nb::Result::Ok(c) = rx.read() {  
             // Fill buffer with received data
         
-            if c == 0x00 {
+            if c == 13 && *in_buf_index != 0usize {
                 // TODO: Re-request packet on CrcError, send error message on ParseError
-                rprintln!("COBS packet recieved");                    
-                cmd_word = deserialize_crc_cobs(in_buf).unwrap();
-
-                reset_indexed_buf(in_buf, in_buf_index);  
+                rprintln!("COBS packet recieved");  
+                
+                match deserialize_crc_cobs(in_buf){
+                    Ok(result) => run_command(result),
+                    Err(error) => {
+                        match error{
+                            DeserError::CrcError => {request_resend();},
+                            _ => {send_errmsg(Response::ParseError, sender);}
+                    };
+                    }
+                }
+                reset_indexed_buf(in_buf, in_buf_index);
             }
             else{
                 // Reset in_buf array if completely filled
                 if *in_buf_index >= BUF_ARRAY_SIZE {
                     reset_indexed_buf(in_buf, in_buf_index);
-                    let errmsg: &[u8]; 
-                    match serialize_crc_cobs(&Response::ParseError, &mut out_buf){
-                        Ok(value) => errmsg = value,
-                        Err(m) => {rprintln!("in_buf_array full, Failed to serialize error message:{}", m);
-                                   break; 
-                                }
-                    };
-                    for i in errmsg{
-                        // TODO: Handle send buffer full without recursive retries or panics
-                        match sender.try_send(*i){
-                            Err(_) => {
-                                rprintln!("send buffer full");
-                            }
-                            _ => {}
-                        };
-                    }                 
-                }
-                    
+                    send_errmsg(Response::ParseError, sender);
+                    }  
+
                 in_buf[*in_buf_index] = c;
-                *in_buf_index += 1;
-            }
-            
-
-
-            
-
-            match sender.try_send(c) {
-                Err(_) => {
-                    rprintln!("send buffer full");
+                *in_buf_index += 1;     
                 }
-                _ => {}
-            }
-            
+        rprintln!("Received char {}, {}",c , c as char);
+        rprintln!("");
+        rx.reset_rx_fifo_full_interrupt(); 
         }
         
-        rprintln!("");
-        rx.reset_rx_fifo_full_interrupt()
+        
     }
+
 
     #[task(priority = 1, local = [ tx ])]
     async fn lowprio(cx: lowprio::Context, mut receiver: Receiver<'static, u8, CAPACITY>) {
