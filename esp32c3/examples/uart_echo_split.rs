@@ -51,18 +51,17 @@ mod app {
         //rprint, 
         rprintln, rtt_init_print};
     use shared::{
-     //   serialize_crc_cobs, 
+        serialize_crc_cobs, 
         deserialize_crc_cobs, 
    //     UtcDateTime, 
      //   Id, 
-        Command, Message, Response, DeserError};
+        Command, Message, Response};
     use core::mem::size_of; 
     use corncobs::{max_encoded_len, 
     //    ZERO
     }; 
-   // const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
-    //const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
-    const BUF_ARRAY_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
+    const IN_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>()); 
+    const OUT_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
    // const CMD_ARRAY_SIZE: usize = 8;
 
     
@@ -75,7 +74,7 @@ mod app {
 
     #[local]
     struct Local {
-        in_buf: [u8; BUF_ARRAY_SIZE],
+        in_buf: [u8; IN_SIZE],
         in_buf_index: usize,
     //    rtc: Rtc<'static>,
     //    rtc_offset: u64,
@@ -127,7 +126,7 @@ mod app {
             &mut system.peripheral_clock_control,
         );
         
-        let in_buf = [0u8;BUF_ARRAY_SIZE];
+        let in_buf = [0u8;IN_SIZE];
         let in_buf_index = 0usize;
 
         // This is stupid!
@@ -195,31 +194,36 @@ mod app {
     }
 */
 
-    fn run_command(cmd_word: Command){
+    fn run_command(cmd_word: Command, sender: &mut Sender<'_, u8, 100>, out_buf: &mut [u8;OUT_SIZE]){
        
        match cmd_word {
        _ => {}
            
        }
-     //  Response::SetOk;
+       
+       respond(sender, out_buf, Response::SetOk);
        
     }
 
     // TODO: Implement requesting resend of packet
-    fn request_resend(){
-
+    fn respond(sender: &mut Sender<'_, u8, 100>, out_buf: &mut [u8;OUT_SIZE], message: Response){
+        match serialize_crc_cobs(&message, out_buf){
+            Ok(buf) => {
+                for c in buf{
+                    match sender.try_send(*c){
+                        Err(_) => rprintln!("Resend request failed: Outbuf full"),
+                        _ => {}
+                    }
+                }
+            }
+            Err(_) => rprintln!("Resend request failed: serialization failed")
+        }
+        *out_buf = [0u8;OUT_SIZE];
     }
 
 
 
     // TODO: Implement sending errmsg to host
-    fn send_errmsg(response: Response, sender: &mut Sender<'_, u8, 100> ){
-        match response{
-            Response::ParseError => {sender.try_send('E' as u8).unwrap();}
-            ,
-            _ => {}
-        }
-    }
 
     #[task(binds = UART0, priority=2, local = [ rx, sender, in_buf_index, in_buf], shared = [])]
     fn uart0(cx: uart0::Context) {
@@ -229,7 +233,7 @@ mod app {
         let in_buf_index = cx.local.in_buf_index;
         
         let _cmd_word: Command = Command::Set(0,Message::A,0);
-        let _out_buf = [0u8;BUF_ARRAY_SIZE];
+        let mut out_buf = [0u8;OUT_SIZE];
 
         rprintln!("Interrupt Received: ");
 
@@ -237,25 +241,20 @@ mod app {
             // Fill buffer with received data
         
             if c == 13 && *in_buf_index != 0usize {
-                // TODO: Re-request packet on CrcError, send error message on ParseError
+                // Re-request packet on error. Host handles max retries
                 rprintln!("COBS packet recieved");  
                 
                 match deserialize_crc_cobs(in_buf){
-                    Ok(result) => run_command(result),
-                    Err(error) => {
-                        match error{
-                            DeserError::CrcError => {request_resend();},
-                            _ => {send_errmsg(Response::ParseError, sender);}
-                    };
-                    }
+                    Ok(result) => run_command(result, sender, &mut out_buf),
+                    Err(_) => respond(sender, &mut out_buf, Response::ParseError)
                 }
                 reset_indexed_buf(in_buf, in_buf_index);
             }
             else{
                 // Reset in_buf array if completely filled
-                if *in_buf_index >= BUF_ARRAY_SIZE {
+                if *in_buf_index >= IN_SIZE {
                     reset_indexed_buf(in_buf, in_buf_index);
-                    send_errmsg(Response::ParseError, sender);
+                    respond(sender, &mut out_buf, Response::ParseError);
                     }  
 
                 in_buf[*in_buf_index] = c;
