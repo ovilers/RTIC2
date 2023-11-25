@@ -10,7 +10,7 @@
 //!
 
 // Rust dependencies
-use std::{io::{Read, ErrorKind, Error}, mem::size_of};
+use std::{io::{Read, Error}, mem::size_of};
 
 // Libraries
 use corncobs::{max_encoded_len, ZERO};
@@ -22,6 +22,7 @@ use shared::{deserialize_crc_cobs, serialize_crc_cobs, Command, Message, Respons
 
 const IN_SIZE: usize = max_encoded_len(size_of::<Response>() + size_of::<u32>());
 const OUT_SIZE: usize = max_encoded_len(size_of::<Command>() + size_of::<u32>());
+const MAX_RETRIES: usize = 3;
 
 type InBuf = [u8; IN_SIZE];
 type OutBuf = [u8; OUT_SIZE];
@@ -50,29 +51,36 @@ fn request(
     out_buf: &mut OutBuf,
     in_buf: &mut InBuf,
 ) -> Result<Response, std::io::Error> {
-    println!("out_buf {}", out_buf.len());
-    let to_write = serialize_crc_cobs(cmd, out_buf);
-    match to_write{
-        Ok(val) => port.write_all(val).unwrap_or(println!("Failed to send packet")),
-        Err(m) => println!("Serialization error: {:?}", m)
-    }
+    let mut retries: usize = 0;
+    while retries < MAX_RETRIES{    
+        println!("out_buf {}", out_buf.len());
+        let to_write = serialize_crc_cobs(cmd, out_buf);
+        match to_write{
+            Ok(val) => port.write_all(val).unwrap_or(println!("Failed to send packet")),
+            Err(m) => println!("Serialization error: {:?}", m)
+        }
 
-    let mut index: usize = 0;
-    loop {
-        let slice = &mut in_buf[index..index + 1];
-        if index < IN_SIZE {
-            index += 1;
+        let mut index: usize = 0;
+        loop {
+            let slice = &mut in_buf[index..index + 1];
+            if index < IN_SIZE {
+                index += 1;
+            }
+            port.read_exact(slice)?;
+            if slice[0] == ZERO {
+                println!("-- cobs package received --");
+                break;
+            }
         }
-        port.read_exact(slice)?;
-        if slice[0] == ZERO {
-            println!("-- cobs package received --");
-            break;
-        }
-    }
-    println!("cobs index {}", index);
-    match deserialize_crc_cobs(in_buf){
-        Ok(val) => Ok(val),
-        Err(ssmarshal::Error::ApplicationError("Crc Mismatch")) => Err(Error::new(ErrorKind::InvalidData, "Crc mismatch!")),
-        _ => Err(Error::new(ErrorKind::InvalidData, "Could not parse data!")),
-    }
+        println!("cobs index {}", index);
+        match deserialize_crc_cobs(in_buf){
+            Ok(val) => return Ok(val),
+            Err(ssmarshal::Error::ApplicationError("Crc Mismatch")) => println!("CRC mismatch!"),
+            _ => println!("Could not parse packet!"),
+        };
+        println!("Retrying...");
+        retries += 1;
+    };
+    println!("Failed to send command");
+    Err(Error::new(std::io::ErrorKind::BrokenPipe, "Failed to send command"))
 }
