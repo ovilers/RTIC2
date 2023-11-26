@@ -182,13 +182,13 @@ mod app {
 */
 
     fn run_command(cmd_word: Command, tx: &mut UartTx<'_, UART0>, out_buf: &mut [u8;OUT_SIZE]){
-       
+       rprintln!("Running command");
        match cmd_word {
        _ => {}
            
        }
        
-       respond(tx, out_buf, Response::SetOk);
+       respond(tx, out_buf, Response::ParseError);
        
     }
 
@@ -225,7 +225,15 @@ mod app {
 
         while let nb::Result::Ok(c) = rx.read() {  
             // Fill buffer with received data
-        
+              
+            // Reset in_buf array if completely filled
+            if *in_buf_index >= IN_SIZE {
+            reset_indexed_buf(in_buf, in_buf_index);
+            respond(tx, &mut out_buf, Response::NotOk);
+            }  
+            
+            in_buf[*in_buf_index] = c;
+            *in_buf_index += 1;  
             if c == ZERO && *in_buf_index != 0usize {
                 // Re-request packet on error. Host handles max retries
                 rprintln!("COBS packet recieved");  
@@ -236,16 +244,7 @@ mod app {
                 }
                 reset_indexed_buf(in_buf, in_buf_index);
             }
-            else{
-                // Reset in_buf array if completely filled
-                if *in_buf_index >= IN_SIZE {
-                    reset_indexed_buf(in_buf, in_buf_index);
-                    respond(tx, &mut out_buf, Response::NotOk);
-                    }  
-
-                in_buf[*in_buf_index] = c;
-                *in_buf_index += 1;     
-                }
+           
         rprintln!("Received char {}, {}",c , c as char);
         rprintln!("");
         rx.reset_rx_fifo_full_interrupt(); 
