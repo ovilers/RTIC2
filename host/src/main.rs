@@ -32,16 +32,16 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut out_buf = [0u8; OUT_SIZE];
     let mut in_buf = [0u8; IN_SIZE];
+    print_commands();
 
     loop{
         let mut input_raw = String::new();
-
-        print_commands();
 
         match io::stdin().read_line(&mut input_raw) {
             Err(error) => println!("Error with input: {error}"),
             _ => {}
             }
+            println!("{input_raw}");
         let input = input_raw.as_str();
         let cmd: Command = match input{
             "1" => Command::Set(0x12, Message::B(12), 0b001),
