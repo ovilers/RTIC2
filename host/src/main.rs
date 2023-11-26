@@ -10,7 +10,7 @@
 //!
 
 // Rust dependencies
-use std::{io::{Read, Error}, time::Duration, mem::size_of, thread::sleep};
+use std::{io::{Read, Error},io, time::Duration, mem::size_of, thread::sleep};
 
 // Libraries
 use corncobs::{max_encoded_len, ZERO};
@@ -34,25 +34,40 @@ fn main() -> Result<(), std::io::Error> {
     let mut in_buf = [0u8; IN_SIZE];
 
     loop{
-        let cmd = Command::Set(0x12, Message::B(12), 0b001);
-        println!("request {:?}", cmd);
-        let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf);
-        match response{
-            Ok(m) => println!("Success {:?}", m),
-            Err(m) => println!("Failure: {:?}", m),
+        let mut input_raw = String::new();
+        match io::stdin().read_line(&mut input_raw) {
+            Err(error) => println!("Error with input: {error}"),
+            _ => {}
+            }
+        let input = input_raw.as_str();
+        let cmd: Command = match input{
+            "1" => Command::Set(0x12, Message::B(12), 0b001),
+            "2" => Command::Get(0x12, 12, 0b001),
+            "3" => Command::Set(0x01, Message::B(1), 0b000),
+            "4" => Command::Get(0x01, 15, 0b000 ),
+            "q" => return Ok(()),
+            _ => {println!("Invalid input"); continue;}
         }
 
-        let cmd = Command::Get(0x12, 12, 0b001);
         println!("request {:?}", cmd);
         let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf);
         match response{
             Ok(m) => println!("Success {:?}", m),
             Err(m) => println!("Failure: {:?}", m),
         }
-        
-        sleep(Duration::new(2, 0));
     }  
-//    Ok(())
+   // Ok(())
+}
+
+fn print_commands(){
+    println!("Greetings! Please input your command:");
+    println!(" 1  Set RTC of esp");
+    println!(" 2  Get RTC of esp");
+    println!(" 3  Set colour of LED to setting 1");
+    println!(" 4  Get colour of LED");
+    println!(" h  print this message");
+    println!(" q  Exit program");
+
 }
 
 fn request(
