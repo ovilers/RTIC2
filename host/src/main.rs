@@ -42,7 +42,7 @@ fn main() -> Result<(), std::io::Error> {
             _ => {}
             }
             println!("{input_raw}");
-        let input = input_raw.as_str();
+        let input = input_raw.trim();
         let cmd: Command = match input{
             "1" => Command::Set(0x12, Message::B(12), 0b001),
             "2" => Command::Get(0x12, 12, 0b001),
