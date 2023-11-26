@@ -92,7 +92,7 @@ fn request(
         match deserialize_crc_cobs(in_buf){
             Ok(response) => {
                 match response{
-                    Response::SetOk => return Ok(Response::SetOk),
+                    Response::SetOk => return Ok(response),
                     _ => {println!("Client failed to parse packet!");},
                 }},
             Err(ssmarshal::Error::ApplicationError("Crc Mismatch")) => println!("CRC mismatch!"),
