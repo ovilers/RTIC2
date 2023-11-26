@@ -147,8 +147,7 @@ mod app {
     #[idle(local = [ timer0 ])]
     fn idle(cx: idle::Context) -> ! {
         loop {
-            rprintln!("idle, do some background work if any ...");
-            // not async wait
+        //  not async wait
             nb::block!(cx.local.timer0.wait()).unwrap();
         }
     }
@@ -184,20 +183,21 @@ mod app {
     fn run_command(cmd_word: Command, tx: &mut UartTx<'_, UART0>, out_buf: &mut [u8;OUT_SIZE]){
        rprintln!("Running command");
        match cmd_word {
-       _ => {}
-           
+       Command::Get(a, b, c) => {rprintln!("Received command Get {} {} {}",a,b,c);},
+       Command::Set(a,b,c) => rprintln!("Received command Set {} {:?} {}", a, b, c)
        }
        
-       respond(tx, out_buf, Response::ParseError);
+
+       respond(tx, out_buf, Response::SetOk);
        
     }
 
     // TODO: Implement requesting resend of packet
     fn respond(tx: &mut UartTx<'_, UART0>, out_buf: &mut [u8;OUT_SIZE], message: Response){
-        let mut response_failure = true;
+        let mut response_failure = false;
         
         match serialize_crc_cobs(&message, out_buf){
-            Ok(buf) => response_failure = tx.write_bytes(buf).unwrap_or(0usize)!=0usize,
+            Ok(buf) =>  response_failure = tx.write_bytes(buf).unwrap_or(0usize) == 0,
             Err(_) => rprintln!("Response failed: serialization failed")
         }
         if response_failure{
@@ -221,17 +221,15 @@ mod app {
         let _cmd_word: Command = Command::Set(0,Message::A,0);
         let mut out_buf = [0u8;OUT_SIZE];
 
-        rprintln!("Interrupt Received: ");
-
         while let nb::Result::Ok(c) = rx.read() {  
             // Fill buffer with received data
               
             // Reset in_buf array if completely filled
             if *in_buf_index >= IN_SIZE {
-            reset_indexed_buf(in_buf, in_buf_index);
-            respond(tx, &mut out_buf, Response::NotOk);
+                reset_indexed_buf(in_buf, in_buf_index);
+                respond(tx, &mut out_buf, Response::NotOk);
             }  
-            
+
             in_buf[*in_buf_index] = c;
             *in_buf_index += 1;  
             if c == ZERO && *in_buf_index != 0usize {
@@ -244,9 +242,6 @@ mod app {
                 }
                 reset_indexed_buf(in_buf, in_buf_index);
             }
-           
-        rprintln!("Received char {}, {}",c , c as char);
-        rprintln!("");
         rx.reset_rx_fifo_full_interrupt(); 
         }
         
