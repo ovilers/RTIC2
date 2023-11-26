@@ -62,8 +62,10 @@ fn request(
     in_buf: &mut InBuf,
 ) -> Result<Response, std::io::Error> {
     let mut retries: usize = 0;
+   
     while retries < MAX_RETRIES{    
         println!("out_buf {}", out_buf.len());
+   
         let to_write = serialize_crc_cobs(cmd, out_buf);
         match to_write{
             Ok(val) => port.write_all(val).unwrap(),
@@ -81,8 +83,12 @@ fn request(
                 println!("-- cobs package received --");
                 break;
             }
+   
         }
         println!("cobs index {}", index);
+        if index <= 1{
+            return Err(Error::new (std::io::ErrorKind::InvalidData, "Packet empty"));
+        }
         match deserialize_crc_cobs(in_buf){
             Ok(response) => {
                 match response{
