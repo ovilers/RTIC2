@@ -35,6 +35,9 @@ fn main() -> Result<(), std::io::Error> {
 
     loop{
         let mut input_raw = String::new();
+
+        print_commands();
+
         match io::stdin().read_line(&mut input_raw) {
             Err(error) => println!("Error with input: {error}"),
             _ => {}
@@ -45,6 +48,7 @@ fn main() -> Result<(), std::io::Error> {
             "2" => Command::Get(0x12, 12, 0b001),
             "3" => Command::Set(0x01, Message::B(1), 0b000),
             "4" => Command::Get(0x01, 15, 0b000 ),
+            "h" => {print_commands(); continue;},
             "q" => return Ok(()),
             _ => {println!("Invalid input"); continue;}
         }
