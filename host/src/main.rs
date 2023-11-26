@@ -74,7 +74,11 @@ fn request(
         }
         println!("cobs index {}", index);
         match deserialize_crc_cobs(in_buf){
-            Ok(val) => return Ok(val),
+            Ok(response) => {
+                match response{
+                    Response::SetOk => return Ok(Response::SetOk),
+                    _ => {println!("Client failed to parse packet!");},
+                }},
             Err(ssmarshal::Error::ApplicationError("Crc Mismatch")) => println!("CRC mismatch!"),
             _ => println!("Could not parse packet!"),
         };
