@@ -56,7 +56,7 @@ fn request(
         println!("out_buf {}", out_buf.len());
         let to_write = serialize_crc_cobs(cmd, out_buf);
         match to_write{
-            Ok(val) => port.write_all(val).unwrap_or(println!("Failed to send packet")),
+            Ok(val) => port.write_all(val).unwrap(),
             Err(m) => println!("Serialization error: {:?}", m)
         }
 
