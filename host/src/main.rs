@@ -10,7 +10,7 @@
 //!
 
 // Rust dependencies
-use std::{io::{Read, Error}, mem::size_of};
+use std::{io::{Read, Error}, time::Duration, mem::size_of, thread::sleep};
 
 // Libraries
 use corncobs::{max_encoded_len, ZERO};
@@ -33,16 +33,26 @@ fn main() -> Result<(), std::io::Error> {
     let mut out_buf = [0u8; OUT_SIZE];
     let mut in_buf = [0u8; IN_SIZE];
 
-    let cmd = Command::Set(0x12, Message::B(12), 0b001);
-    println!("request {:?}", cmd);
-    let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf)?;
-    println!("response {:?}", response);
+    loop{
+        let cmd = Command::Set(0x12, Message::B(12), 0b001);
+        println!("request {:?}", cmd);
+        let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf);
+        match response{
+            Ok(m) => println!("Success {:?}", m),
+            Err(m) => println!("Failure: {:?}", m),
+        }
 
-    let cmd = Command::Get(0x12, 12, 0b001);
-    println!("request {:?}", cmd);
-    let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf)?;
-    println!("response {:?}", response);
-    Ok(())
+        let cmd = Command::Get(0x12, 12, 0b001);
+        println!("request {:?}", cmd);
+        let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf);
+        match response{
+            Ok(m) => println!("Success {:?}", m),
+            Err(m) => println!("Failure: {:?}", m),
+        }
+        
+        sleep(Duration::new(2, 0));
+    }  
+//    Ok(())
 }
 
 fn request(
