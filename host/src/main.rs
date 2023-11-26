@@ -48,7 +48,7 @@ fn main() -> Result<(), std::io::Error> {
             "2" => Command::Get(0x12, 12, 0b001),
             "3" => Command::Set(0x01, Message::B(1), 0b000),
             "4" => Command::Get(0x01, 15, 0b000 ),
-            "h" => {print_commands(); continue;},
+            "h" | "help" | "H" => {print_commands(); continue;},
             "q" => return Ok(()),
             _ => {println!("Invalid input"); continue;}
         };
