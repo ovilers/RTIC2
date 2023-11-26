@@ -41,7 +41,6 @@ fn main() -> Result<(), std::io::Error> {
             Err(error) => println!("Error with input: {error}"),
             _ => {}
             }
-            println!("{input_raw}");
         let input = input_raw.trim();
         let cmd: Command = match input{
             "1" => Command::Set(0x12, Message::B(12), 0b001),
