@@ -10,7 +10,7 @@
 //!
 
 // Rust dependencies
-use std::{io::{Read, Error},io, time::Duration, mem::size_of, thread::sleep};
+use std::{io::{Read, Error},io, mem::size_of};
 
 // Libraries
 use corncobs::{max_encoded_len, ZERO};
@@ -51,7 +51,7 @@ fn main() -> Result<(), std::io::Error> {
             "h" => {print_commands(); continue;},
             "q" => return Ok(()),
             _ => {println!("Invalid input"); continue;}
-        }
+        };
 
         println!("request {:?}", cmd);
         let response = request(&cmd, &mut port, &mut out_buf, &mut in_buf);
